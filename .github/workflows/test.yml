@@ -10,7 +10,15 @@ jobs:
       - name: Checkout action repository
         uses: actions/checkout@v4
 
+      - name: Cache reference firmware
+        id: cache-firmware
+        uses: actions/cache@v4
+        with:
+          path: firmware
+          key: firmware-d5f5484438a84e96e7f5cab49eb3777007ce7d87
+
       - name: Checkout reference firmware
+        if: steps.cache-firmware.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: Infineon/AURIX_code_examples
