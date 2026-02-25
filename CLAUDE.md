@@ -45,14 +45,17 @@ Copy these subdirectories into `toolchain/tricore-gcc11/`:
 | Source subdirectory              | Purpose                        |
 |----------------------------------|--------------------------------|
 | `bin\`                           | Compiler, objcopy, DLLs        |
-| `lib\`                           | GCC support libraries          |
+| `lib\`                           | GCC support libraries (libgcc.a, crt objects, tc162 ISA variant) |
 | `libexec\`                       | Internal GCC tools (cc1, etc.) |
 | `tricore-elf\bin\`               | Binutils (as, ld, ar, nm, …)   |
-| `tricore-elf\include\`           | System headers                 |
-| `tricore-elf\lib\tc162\`         | TC375 runtime libraries        |
-| `tricore-elf\lib\ldscripts\`     | Binutils linker scripts        |
+| `tricore-elf\include\`           | System headers (newlib C/C++ headers) |
+| `tricore-elf\lib\`               | C/C++ runtime libs (libc.a, libm.a, libstdc++.a, nosys.specs, …), linker scripts, and TC375 ISA variant |
 
-**Do NOT copy** `tricore-elf\lib\tc131\`, `tc18\`, `tc161\`, `tc16\`, `short-double\` — these are for other TriCore ISA variants.
+**Do NOT copy:**
+- `mcs-elf\` — different target architecture (MCS), not needed for TriCore
+- `share\` — documentation and man pages only
+- `include\` — empty at the top level of the toolchain root
+- Within `tricore-elf\lib\`: skip `tc131\`, `tc16\`, `tc161\`, `tc18\`, `short-double\` — other TriCore ISA variants (TC375 uses `tc162\`)
 
 ---
 
@@ -68,7 +71,7 @@ No Docker required. The included toolchain eliminates the need for AURIX Develop
 |------------------|----------|------------------------------------------------------|-------------------------------------------------------|
 | `project-path`   | yes      | —                                                    | Path to the firmware repo root (contains `.cproject`) |
 | `toolchain-path` | no       | `${{ github.action_path }}/toolchain/tricore-gcc11/bin` | Path to `tricore-gcc11/bin`                        |
-| `configuration`  | no       | `Release`                                            | Build config substring to match (`Debug` or `Release`) |
+| `configuration`  | no       | `Release`                                            | Substring of the GCC configuration name to match. The first configuration whose toolchain is GCC **and** whose name contains this substring (case-insensitive) is built. Works with any name, including custom ones (e.g. `"Green LED"`). |
 | `jobs`           | no       | `4`                                                  | Parallel make jobs (`-j`)                             |
 | `extra-defines`  | no       | `''`                                                 | Space-separated extra preprocessor definitions injected at compile time, e.g. `MY_FLAG=1 ANOTHER_FLAG` |
 
@@ -122,6 +125,7 @@ jobs:
 - Takes `--project`, `--toolchain`, `--output`, `--config`, `--extra-defines` CLI arguments
 - Reads `.project` to get the project name (handles `${ProjName}` substitution)
 - Reads `.cproject` with Python's `xml.etree.ElementTree`
+- GCC vs TASKING detection: inspects the `toolChain` `superClass` attribute — configurations are GCC if `superClass` contains `gcc` but not `tasking`. This works with any configuration name, including custom ones.
 - Maps Eclipse CDT enum values to real GCC flags (see `OPT_MAP`, `DBG_MAP`)
 - Resolves `${workspace_loc:/ProjName/...}` variables to real paths
 - Applies Eclipse CDT `|`-separated exclusion patterns (including `/**` glob syntax)
