@@ -1,0 +1,40 @@
+name: Self-test
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout action repository
+        uses: actions/checkout@v4
+
+      - name: Checkout reference firmware
+        uses: actions/checkout@v4
+        with:
+          repository: Infineon/AURIX_code_examples
+          ref: d5f5484438a84e96e7f5cab49eb3777007ce7d87
+          path: firmware
+
+      - name: Build firmware
+        uses: ./
+        with:
+          project-path: firmware/code_examples/Blinky_LED_1_KIT_TC375_LK
+          configuration: Release
+
+      - name: Compare output against reference
+        shell: bash
+        run: |
+          HEX=$(find firmware/code_examples/Blinky_LED_1_KIT_TC375_LK -name "*.hex" | head -1)
+          if [ -z "$HEX" ]; then
+            echo "ERROR: no .hex file found"
+            exit 1
+          fi
+          echo "Built: $HEX"
+          if ! cmp -s "$HEX" test/reference.hex; then
+            echo "ERROR: output hex differs from reference"
+            diff <(xxd "$HEX" | head -20) <(xxd test/reference.hex | head -20) || true
+            exit 1
+          fi
+          echo "OK: output matches reference"
