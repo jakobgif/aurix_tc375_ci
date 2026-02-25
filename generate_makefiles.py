@@ -245,8 +245,10 @@ def parse_gcc_config(project_path: Path, proj_name: str, config_substr: str) -> 
                 if token:
                     exclusions.append(token)
 
-    # The Eclipse builder path mirrors the config name as a subdirectory
-    build_dir = project_path / chosen_name
+    # Build directory: sanitize the config name so make never sees a space in a
+    # target path (GNU make does not support spaces in target names).
+    safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', chosen_name)
+    build_dir = project_path / safe_name
 
     return {
         'name':       chosen_name,
@@ -345,6 +347,17 @@ def generate_makefile(
         for src in sources
     }
 
+    # Write response files to avoid the Windows 8191-char command-line limit.
+    # Includes (141 paths) and object files (180 paths) both exceed it.
+    build_dir.mkdir(parents=True, exist_ok=True)
+    rsp_path = build_dir / 'includes.rsp'
+    rsp_lines = [f'-I"{fwd(Path(i))}"' for i in cfg['includes']]
+    rsp_path.write_text('\n'.join(rsp_lines), encoding='utf-8')
+
+    obj_rsp_path = build_dir / 'objects.rsp'
+    obj_rsp_lines = [fwd(o) for o in obj_map.values()]
+    obj_rsp_path.write_text('\n'.join(obj_rsp_lines), encoding='utf-8')
+
     # ── Assemble Makefile lines ────────────────────────────────────────────────
     L = []
     a = L.append
@@ -361,12 +374,6 @@ def generate_makefile(
     a(f'HEX       := {fwd(hex_path)}')
     a(f'')
     a(f'CFLAGS   := {" ".join(base_flags)}')
-
-    if cfg['includes']:
-        inc_str = ' \\\n           '.join(f'-I"{i}"' for i in cfg['includes'])
-        a(f'INCLUDES := {inc_str}')
-    else:
-        a(f'INCLUDES :=')
 
     if all_defines:
         def_str = ' '.join(f'-D{d}' for d in all_defines)
@@ -392,7 +399,7 @@ def generate_makefile(
     a(f'')
     a(f'$(ELF): $(OBJS)')
     link_flags = f'{cfg["isa"]} -T {fwd(lsl_path)} -Wl,--gc-sections'
-    a(f'\t$(CC) {link_flags} -o $@ $(OBJS)')
+    a(f'\t$(CC) {link_flags} -o $@ @{fwd(obj_rsp_path)}')
     a(f'\t@echo "ELF: $@"')
     a(f'')
     a(f'clean:')
@@ -405,7 +412,7 @@ def generate_makefile(
         obj_dir = fwd(obj.parent)
         a(f'{fwd(obj)}: {fwd(src)}')
         a(f'\t@mkdir -p {obj_dir}')
-        a(f'\t$(CC) $(CFLAGS) $(INCLUDES) $(DEFINES) -c -o $@ $<')
+        a(f'\t$(CC) $(CFLAGS) @{fwd(rsp_path)} $(DEFINES) -c -o $@ $<')
         a(f'')
 
     a(f'# ── Auto-generated dependency files ──────────────────────────────────')
