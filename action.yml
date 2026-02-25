@@ -1,0 +1,74 @@
+name: Build AURIX TC375 Firmware
+description: >
+  Builds an AURIX TC375 Eclipse CDT / AURIX Development Studio project using
+  the bundled TriCore GCC toolchain — no IDE installation required.
+
+inputs:
+  project-path:
+    description: >
+      Path to the firmware repository root (the directory that contains
+      .cproject and .project).
+    required: true
+
+  toolchain-path:
+    description: >
+      Path to the tricore-gcc11/bin directory.
+      Defaults to the toolchain bundled with this action.
+    required: false
+    default: ${{ github.action_path }}/toolchain/tricore-gcc11/bin
+
+  configuration:
+    description: >
+      Build configuration substring to match (e.g. "Release" or "Debug").
+      The first GCC configuration whose name contains this substring is built.
+    required: false
+    default: Release
+
+  jobs:
+    description: Number of parallel make jobs (-j).
+    required: false
+    default: '4'
+
+  extra-defines:
+    description: >
+      Space-separated extra preprocessor definitions injected at compile time,
+      on top of whatever .cproject already specifies. Each entry may be a bare
+      name (NAME) or a name=value pair (NAME=VALUE).
+      Example: "MY_FLAG=1 ANOTHER_FLAG DEBUG_LEVEL=3"
+    required: false
+    default: ''
+
+outputs:
+  elf-path:
+    description: Absolute path to the built .elf file.
+    value: ${{ steps.set-outputs.outputs.elf-path }}
+
+  hex-path:
+    description: Absolute path to the built .hex file.
+    value: ${{ steps.set-outputs.outputs.hex-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate Makefile
+      shell: bash
+      run: |
+        python "${{ github.action_path }}/generate_makefiles.py" \
+          --project   "${{ inputs.project-path }}" \
+          --toolchain "${{ inputs.toolchain-path }}" \
+          --output    "${{ inputs.project-path }}/Makefile.ci" \
+          --config    "${{ inputs.configuration }}" \
+          --extra-defines "${{ inputs.extra-defines }}"
+
+    - name: Build
+      shell: bash
+      run: make -f "${{ inputs.project-path }}/Makefile.ci" -j${{ inputs.jobs }}
+
+    - name: Set outputs
+      id: set-outputs
+      shell: bash
+      run: |
+        ELF=$(find "${{ inputs.project-path }}" -name "*.elf" | head -1)
+        HEX=$(find "${{ inputs.project-path }}" -name "*.hex" | head -1)
+        echo "elf-path=$ELF" >> "$GITHUB_OUTPUT"
+        echo "hex-path=$HEX" >> "$GITHUB_OUTPUT"
