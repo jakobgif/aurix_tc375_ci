@@ -57,6 +57,17 @@ Copy these subdirectories into `toolchain/tricore-gcc11/`:
 - `include\` — empty at the top level of the toolchain root
 - Within `tricore-elf\lib\`: skip `tc131\`, `tc16\`, `tc161\`, `tc18\`, `short-double\` — other TriCore ISA variants (TC375 uses `tc162\`)
 
+**Critical files that must be present** (the linker needs these even with `-nocrt0`):
+
+| File                                                    | Purpose                        |
+|---------------------------------------------------------|--------------------------------|
+| `lib\gcc\tricore-elf\11.3.1\tc162\crtbegin.o`          | C++ exception frame begin      |
+| `lib\gcc\tricore-elf\11.3.1\tc162\crtend.o`            | C++ exception frame end        |
+| `lib\gcc\tricore-elf\11.3.1\tc162\crti.o`              | `.init` / `.fini` section open |
+| `lib\gcc\tricore-elf\11.3.1\tc162\crtn.o`              | `.init` / `.fini` section close|
+
+These are compiled from the `.S` sources (`crti.S`, `crtn.S`) in the same directory and ship pre-built in the full ADS toolchain installation.
+
 ---
 
 ## Action design
