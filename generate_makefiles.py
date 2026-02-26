@@ -370,7 +370,7 @@ def generate_makefile(
     rsp_path.write_text('\n'.join(rsp_lines), encoding='utf-8')
 
     obj_rsp_path = build_dir / 'objects.rsp'
-    obj_rsp_lines = [fwd(o) for o in obj_map.values()]
+    obj_rsp_lines = [f'"{fwd(o)}"' for o in obj_map.values()]
     obj_rsp_path.write_text('\n'.join(obj_rsp_lines), encoding='utf-8')
 
     # ── Assemble Makefile lines ────────────────────────────────────────────────
@@ -413,7 +413,7 @@ def generate_makefile(
     a(f'\t@echo "HEX: $@"')
     a(f'')
     a(f'$(ELF): $(OBJS)')
-    link_flags = f'{cfg["isa"]} -T {fwd(lsl_path)} -Wl,--gc-sections'
+    link_flags = f'{cfg["isa"]} -nocrt0 -T {fwd(lsl_path)} -Wl,--gc-sections'  # -nocrt0 matches ADS default
     a(f'\t$(CC) {link_flags} -o "$@" "@{fwd(obj_rsp_path)}"')
     a(f'\t@echo "ELF: $@"')
     a(f'')
