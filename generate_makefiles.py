@@ -64,6 +64,17 @@ def fwd(path) -> str:
     return str(path).replace('\\', '/')
 
 
+def mesc(path) -> str:
+    """Escape spaces in a path for use as a GNU make target or prerequisite.
+
+    GNU make uses whitespace as a separator; backslash-space is the only
+    supported escape.  Parentheses are safe without escaping (they are only
+    special after a leading $).  The escaped string is also valid as an
+    unquoted bash word: bash strips the backslash when word-splitting.
+    """
+    return fwd(path).replace(' ', '\\ ')
+
+
 def get_project_name(project_path: Path) -> str:
     """Read the project name from .project XML."""
     tree = ET.parse(project_path / '.project')
@@ -245,10 +256,9 @@ def parse_gcc_config(project_path: Path, proj_name: str, config_substr: str) -> 
                 if token:
                     exclusions.append(token)
 
-    # Build directory: sanitize the config name so make never sees a space in a
-    # target path (GNU make does not support spaces in target names).
-    safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', chosen_name)
-    build_dir = project_path / safe_name
+    # Build directory mirrors the Eclipse CDT configuration name exactly.
+    # Spaces are escaped with backslash in Makefile targets (GNU make ≥ 3.82).
+    build_dir = project_path / chosen_name
 
     return {
         'name':       chosen_name,
@@ -349,6 +359,11 @@ def generate_makefile(
 
     # Write response files to avoid the Windows 8191-char command-line limit.
     # Includes (141 paths) and object files (180 paths) both exceed it.
+    # The response files live inside the build directory.  Paths with spaces or
+    # parentheses are handled by quoting the whole @path argument in the recipe:
+    #   "@C:/path/TriCore Release (GCC)/includes.rsp"
+    # Bash strips the double quotes and passes the argument as a single word to
+    # GCC, which then opens the file.  This is the same technique ADS uses.
     build_dir.mkdir(parents=True, exist_ok=True)
     rsp_path = build_dir / 'includes.rsp'
     rsp_lines = [f'-I"{fwd(Path(i))}"' for i in cfg['includes']]
@@ -369,9 +384,9 @@ def generate_makefile(
     a(f'CC      := {cc}')
     a(f'OBJCOPY := {objcopy}')
     a(f'')
-    a(f'BUILD_DIR := {fwd(build_dir)}')
-    a(f'ELF       := {fwd(elf_path)}')
-    a(f'HEX       := {fwd(hex_path)}')
+    a(f'BUILD_DIR := {mesc(build_dir)}')
+    a(f'ELF       := {mesc(elf_path)}')
+    a(f'HEX       := {mesc(hex_path)}')
     a(f'')
     a(f'CFLAGS   := {" ".join(base_flags)}')
 
@@ -383,10 +398,10 @@ def generate_makefile(
 
     a(f'')
     a(f'OBJS := \\')
-    objs_fwd = [fwd(o) for o in obj_map.values()]
-    for obj in objs_fwd[:-1]:
+    objs_esc = [mesc(o) for o in obj_map.values()]
+    for obj in objs_esc[:-1]:
         a(f'\t{obj} \\')
-    a(f'\t{objs_fwd[-1]}')
+    a(f'\t{objs_esc[-1]}')
     a(f'')
 
     a(f'.PHONY: all clean')
@@ -394,12 +409,12 @@ def generate_makefile(
     a(f'all: $(HEX)')
     a(f'')
     a(f'$(HEX): $(ELF)')
-    a(f'\t$(OBJCOPY) -O ihex $< $@')
+    a(f'\t$(OBJCOPY) -O ihex "$<" "$@"')
     a(f'\t@echo "HEX: $@"')
     a(f'')
     a(f'$(ELF): $(OBJS)')
     link_flags = f'{cfg["isa"]} -T {fwd(lsl_path)} -Wl,--gc-sections'
-    a(f'\t$(CC) {link_flags} -o $@ @{fwd(obj_rsp_path)}')
+    a(f'\t$(CC) {link_flags} -o "$@" "@{fwd(obj_rsp_path)}"')
     a(f'\t@echo "ELF: $@"')
     a(f'')
     a(f'clean:')
@@ -409,14 +424,13 @@ def generate_makefile(
     # Per-file compile rules
     a(f'# ── Per-file compile rules ────────────────────────────────────────────')
     for src, obj in obj_map.items():
-        obj_dir = fwd(obj.parent)
-        a(f'{fwd(obj)}: {fwd(src)}')
-        a(f'\t@mkdir -p {obj_dir}')
-        a(f'\t$(CC) $(CFLAGS) @{fwd(rsp_path)} $(DEFINES) -c -o $@ $<')
+        a(f'{mesc(obj)}: {mesc(src)}')
+        a(f'\t@mkdir -p "{fwd(obj.parent)}"')
+        a(f'\t$(CC) $(CFLAGS) "@{fwd(rsp_path)}" $(DEFINES) -c -o "$@" "$<"')
         a(f'')
 
     a(f'# ── Auto-generated dependency files ──────────────────────────────────')
-    a(f'-include $(OBJS:.o=.d)')
+    a(f'-include $(OBJS:.o=.d)')  # make applies .o→.d substitution on escaped paths correctly
     a(f'')
 
     output_path.write_text('\n'.join(L), encoding='utf-8')
