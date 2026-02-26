@@ -1,0 +1,31 @@
+# ── Documentation / metadata ──────────────────────────────────────────────────
+changelog.txt
+source.txt
+share/
+
+# ── MCS architecture (different target, not TriCore) ──────────────────────────
+mcs-elf/
+bin/mcs-elf-*
+tricore-elf/lib/ldscripts/elf32mcs.*
+
+# ── Non-TC375 ISA variants in lib/gcc/ ────────────────────────────────────────
+# TC375 uses tc162; all other ISA subdirectories are for different devices.
+lib/gcc/tricore-elf/*/tc131/
+lib/gcc/tricore-elf/*/tc16/
+lib/gcc/tricore-elf/*/tc161/
+lib/gcc/tricore-elf/*/tc18/
+lib/gcc/tricore-elf/*/short-double/
+
+# ── Non-TC375 ISA variants in tricore-elf/lib/ ────────────────────────────────
+tricore-elf/lib/tc131/
+tricore-elf/lib/tc16/
+tricore-elf/lib/tc161/
+tricore-elf/lib/tc18/
+tricore-elf/lib/short-double/
+
+# ── Non-TC375 ISA variants in C++ headers ─────────────────────────────────────
+tricore-elf/include/c++/*/tricore-elf/tc131/
+tricore-elf/include/c++/*/tricore-elf/tc16/
+tricore-elf/include/c++/*/tricore-elf/tc161/
+tricore-elf/include/c++/*/tricore-elf/tc18/
+tricore-elf/include/c++/*/tricore-elf/short-double/

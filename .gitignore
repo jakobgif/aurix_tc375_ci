@@ -20,19 +20,4 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Toolchain - MCS architecture tools (not TriCore, not needed)
-toolchain/tricore-gcc11/bin/mcs-elf-*
-toolchain/tricore-gcc11/tricore-elf/lib/ldscripts/elf32mcs.*
-toolchain/tricore-gcc11/mcs-elf/
-
-# Toolchain - non-TC375 ISA variants (tc162 = TC375; all others excluded)
-toolchain/tricore-gcc11/lib/gcc/tricore-elf/11.3.1/tc131/
-toolchain/tricore-gcc11/lib/gcc/tricore-elf/11.3.1/tc16/
-toolchain/tricore-gcc11/lib/gcc/tricore-elf/11.3.1/tc161/
-toolchain/tricore-gcc11/lib/gcc/tricore-elf/11.3.1/tc18/
-toolchain/tricore-gcc11/lib/gcc/tricore-elf/11.3.1/short-double/
-toolchain/tricore-gcc11/tricore-elf/include/c++/11.3.1/tricore-elf/tc131/
-toolchain/tricore-gcc11/tricore-elf/include/c++/11.3.1/tricore-elf/tc16/
-toolchain/tricore-gcc11/tricore-elf/include/c++/11.3.1/tricore-elf/tc161/
-toolchain/tricore-gcc11/tricore-elf/include/c++/11.3.1/tricore-elf/tc18/
-toolchain/tricore-gcc11/tricore-elf/include/c++/11.3.1/tricore-elf/short-double/
+# Toolchain-specific ignores are in toolchain/tricore-gcc11/.gitignore
