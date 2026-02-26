@@ -8,13 +8,6 @@ temp/
 # Generated Makefiles
 Makefile.ci
 
-# Build outputs
-*.elf
-*.hex
-*.map
-*.d
-*.o
-
 # Python
 __pycache__/
 *.pyc

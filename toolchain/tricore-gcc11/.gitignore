@@ -15,6 +15,9 @@ lib/gcc/tricore-elf/*/tc16/
 lib/gcc/tricore-elf/*/tc161/
 lib/gcc/tricore-elf/*/tc18/
 lib/gcc/tricore-elf/*/short-double/
+# Alternative FP multilibs within tc162 (standard double-precision FP is used)
+lib/gcc/tricore-elf/*/tc162/short-double/
+lib/gcc/tricore-elf/*/tc162/soft-single-float/
 
 # ── Non-TC375 ISA variants in tricore-elf/lib/ ────────────────────────────────
 tricore-elf/lib/tc131/
