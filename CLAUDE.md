@@ -148,11 +148,10 @@ The action must be validated by a self-test workflow that:
 3. Compares the output byte-for-byte against a committed reference `.hex` file
 
 ### Reference project
-**Repository:** `Infineon/AURIX_code_examples`
-**Project path inside repo:** `code_examples/Blinky_LED_1_KIT_TC375_LK`
-**URL:** https://github.com/Infineon/AURIX_code_examples/tree/master/code_examples/Blinky_LED_1_KIT_TC375_LK
+**Repository:** `jakobgif/Blinky_LED_1_KIT_TC375_LK`
+**URL:** https://github.com/jakobgif/Blinky_LED_1_KIT_TC375_LK
 
-The entire `AURIX_code_examples` repo is checked out at a pinned commit; `project-path` is pointed at the `Blinky_LED_1_KIT_TC375_LK` subdirectory.
+The repo is checked out at a pinned commit; `project-path` is pointed at the repo root (the project is at the top level, no subdirectory).
 
 ### Reference file
 A pre-built `reference.hex` is committed in `test/` in this repository, produced from the same pinned firmware commit using a known-good build. If the action produces an identical hex the test passes; any difference means the build output changed unexpectedly.
@@ -174,20 +173,20 @@ jobs:
       - name: Checkout reference firmware
         uses: actions/checkout@v4
         with:
-          repository: Infineon/AURIX_code_examples
+          repository: jakobgif/Blinky_LED_1_KIT_TC375_LK
           ref: <pinned-commit-sha>
           path: firmware
 
       - name: Build firmware
         uses: ./
         with:
-          project-path: firmware/code_examples/Blinky_LED_1_KIT_TC375_LK
+          project-path: firmware
           configuration: Release
 
       - name: Compare output against reference
         shell: bash
         run: |
-          HEX=$(find firmware/code_examples/Blinky_LED_1_KIT_TC375_LK -name "*.hex" | head -1)
+          HEX=$(find firmware -name "*.hex" | head -1)
           if ! cmp -s "$HEX" test/reference.hex; then
             echo "ERROR: output hex differs from reference"
             exit 1

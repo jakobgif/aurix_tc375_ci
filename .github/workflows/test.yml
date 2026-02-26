@@ -15,26 +15,26 @@ jobs:
         uses: actions/cache@v4
         with:
           path: firmware
-          key: firmware-d5f5484438a84e96e7f5cab49eb3777007ce7d87
+          key: firmware-43a77844f641368e3eabbfdac7675ca20d6d9932
 
       - name: Checkout reference firmware
         if: steps.cache-firmware.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
-          repository: Infineon/AURIX_code_examples
-          ref: d5f5484438a84e96e7f5cab49eb3777007ce7d87
+          repository: jakobgif/Blinky_LED_1_KIT_TC375_LK
+          ref: 43a77844f641368e3eabbfdac7675ca20d6d9932
           path: firmware
 
       - name: Build firmware
         uses: ./
         with:
-          project-path: firmware/code_examples/Blinky_LED_1_KIT_TC375_LK
+          project-path: firmware
           configuration: Release
 
       - name: Compare output against reference
         shell: bash
         run: |
-          HEX=$(find firmware/code_examples/Blinky_LED_1_KIT_TC375_LK -name "*.hex" | head -1)
+          HEX=$(find firmware -name "*.hex" | head -1)
           if [ -z "$HEX" ]; then
             echo "ERROR: no .hex file found"
             exit 1
