@@ -25,6 +25,10 @@ jobs:
           ref: 43a77844f641368e3eabbfdac7675ca20d6d9932
           path: firmware
 
+      - name: Remove stale build artifacts
+        shell: bash
+        run: rm -rf "firmware/TriCore Release (GCC)"
+
       - name: Generate Makefile
         id: gen
         uses: ./
@@ -34,9 +38,7 @@ jobs:
 
       - name: Build firmware
         shell: bash
-        run: |
-          make -f "${{ steps.gen.outputs.makefile-path }}" clean 2>/dev/null || true
-          make -f "${{ steps.gen.outputs.makefile-path }}" -j4
+        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
 
       - name: Compare output against reference
         shell: bash
