@@ -74,5 +74,3 @@ aurix_tc375_ci/
 └── test/
     └── reference.hex            # Reference build output for self-test
 ```
-
-tricore-elf-gcc -std=c99 "@C:/Users/Jakob/Documents/Projects/aurix_tc375_ci/reference/Blinky_LED_1_KIT_TC375_LK/TriCore Release (GCC)/AURIX_GCC_Compiler-Include_paths__-I_.opt" -O3 -Wall -c -fmessage-length=0 -fno-common -fstrict-volatile-bitfields -fdata-sections -ffunction-sections -mtc162 -MMD -MP -MF"Cpu0_Main.d" -MT"Cpu0_Main.o" -o "Cpu0_Main.o" "../Cpu0_Main.c"
