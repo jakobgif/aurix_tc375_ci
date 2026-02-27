@@ -19,6 +19,7 @@ The Makefile is written to <project-root>/<config-name>/makefile
 import argparse
 import fnmatch
 import re
+import shlex
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 from pathlib import Path
@@ -78,6 +79,37 @@ def mesc(path) -> str:
     return fwd(path).replace(' ', '\\ ')
 
 
+def _parse_other_flags(raw: str, project_path: Path) -> list:
+    """Parse an 'Other flags' string, resolving -include paths to absolute.
+
+    Skips -c (already in recipe) and -fmessage-length=0 (already in base_flags).
+    Converts backslashes to forward slashes in path arguments.
+    """
+    SKIP = {'-c', '-fmessage-length=0'}
+    # Flags that consume the next token as a file path
+    PATH_FLAGS = {'-include', '--include', '-imacros', '-iprefix', '-isystem'}
+    try:
+        tokens = shlex.split(raw, posix=True)
+    except ValueError:
+        tokens = raw.split()
+    result = []
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok in SKIP:
+            i += 1
+            continue
+        if tok in PATH_FLAGS and i + 1 < len(tokens):
+            i += 1
+            raw_path = tokens[i].replace('\\', '/')
+            resolved = fwd(project_path / raw_path)
+            result += [tok, f'"{resolved}"']
+        else:
+            result.append(tok)
+        i += 1
+    return result
+
+
 def get_project_name(project_path: Path) -> str:
     """Read the project name from .project XML."""
     tree = ET.parse(project_path / '.project')
@@ -97,8 +129,11 @@ def resolve_value(raw: str, proj_name: str, project_path: Path) -> str:
     Output example:
         /abs/path/to/project/Libraries/Infra
     """
-    # Strip the surrounding double-quotes that come from &quot; in XML
-    raw = raw.strip('"')
+    # Strip the surrounding double-quotes that come from &quot;...&quot; in XML
+    # (e.g. include paths).  Only strip when both ends carry a quote to avoid
+    # clipping the trailing \" in defines like  __TARGET__=\"TC375\"
+    if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
+        raw = raw[1:-1]
 
     # ${ProjName} must be replaced BEFORE the workspace_loc regex so its inner
     # '}' does not terminate the outer expression prematurely.
@@ -240,14 +275,40 @@ def parse_gcc_config(project_path: Path, proj_name: str, config_substr: str) -> 
             if resolved:
                 defines.append(resolved)
 
-    # ── Source exclusions ──────────────────────────────────────────────────────
-    exclusions = []
+    # ── Dialect flags (e.g. -std=gnu11 from "Other dialect flags") ────────────
+    dialect_flags = []
+    dialect_opt = toolchain.find(
+        ".//option[@superClass='com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.dialect.flags']"
+    )
+    if dialect_opt is not None:
+        val = _option_value(dialect_opt).strip()
+        if val:
+            dialect_flags = shlex.split(val)
+
+    # ── Other compiler flags (e.g. -include from "Other flags") ───────────────
+    other_flags = []
+    misc_opt = toolchain.find(
+        ".//option[@superClass='com.infineon.aurix.buildsystem.managed.tool.c.compiler.option.misc.other']"
+    )
+    if misc_opt is not None:
+        val = _option_value(misc_opt).strip()
+        if val:
+            other_flags = _parse_other_flags(val, project_path)
+
+    # ── Source roots with per-root exclusions ─────────────────────────────────
+    # Eclipse CDT supports multiple <entry kind="sourcePath"> elements; each is
+    # an independent source tree with its own excluding= list.  Exclusion
+    # patterns are relative to THAT entry's root, not the project root.
+    source_roots = []  # list of (abs_root_path, [normalised_exclusion_strings])
     src_entries = configuration.find('sourceEntries')
     if src_entries is not None:
         for entry in src_entries.findall('entry'):
             if entry.get('kind') != 'sourcePath':
                 continue
+            entry_name = entry.get('name', '').strip()
+            entry_root = (project_path / entry_name) if entry_name else project_path
             excl_str = entry.get('excluding', '')
+            excls = []
             for token in excl_str.split('|'):
                 token = token.strip()
                 if not token:
@@ -257,22 +318,25 @@ def parse_gcc_config(project_path: Path, proj_name: str, config_substr: str) -> 
                     token = token[:-3]
                 token = token.rstrip('/')
                 if token:
-                    exclusions.append(token)
+                    excls.append(token)
+            source_roots.append((entry_root, excls))
 
     # Build directory mirrors the Eclipse CDT configuration name exactly.
     # Spaces are escaped with backslash in Makefile targets (GNU make ≥ 3.82).
     build_dir = project_path / chosen_name
 
     return {
-        'name':       chosen_name,
-        'proj_name':  proj_name,
-        'build_dir':  build_dir,
-        'isa':        isa_flag,
-        'opt':        opt_flag,
-        'dbg':        dbg_flag,
-        'includes':   includes,
-        'defines':    defines,
-        'exclusions': exclusions,
+        'name':          chosen_name,
+        'proj_name':     proj_name,
+        'build_dir':     build_dir,
+        'isa':           isa_flag,
+        'opt':           opt_flag,
+        'dbg':           dbg_flag,
+        'dialect_flags': dialect_flags,
+        'other_flags':   other_flags,
+        'includes':      includes,
+        'defines':       defines,
+        'source_roots':  source_roots,
     }
 
 
@@ -305,26 +369,33 @@ def is_excluded(rel_path: str, exclusions: list) -> bool:
     return False
 
 
-def find_sources(project_path: Path, exclusions: list) -> list:
+def find_sources(project_path: Path, source_roots: list) -> list:
     """
-    Walk the project tree and return absolute Paths to all .c / .S source
-    files that are not excluded, ordered to match AURIX Development Studio's
-    link order:
+    Walk each source root and return absolute Paths to all .c / .S source
+    files that are not excluded by that root's exclusion list.
+
+    Ordered to match AURIX Development Studio's link order:
       - Directories sorted in DESCENDING (reverse) alphabetical order by
         their full absolute path string — this mirrors the subdir.mk include
         order that ADS generates.
       - Files within each directory sorted in ASCENDING alphabetical order.
     """
     by_dir: dict[Path, list[Path]] = defaultdict(list)
-    for p in project_path.rglob('*'):
-        if p.suffix.lower() not in ('.c', '.s'):
-            continue
-        try:
-            rel = p.relative_to(project_path)
-        except ValueError:
-            continue
-        if not is_excluded(str(rel), exclusions):
-            by_dir[p.parent].append(p)
+    seen: set[Path] = set()
+
+    for entry_root, excls in source_roots:
+        for p in entry_root.rglob('*'):
+            if p.suffix.lower() not in ('.c', '.s'):
+                continue
+            if p in seen:
+                continue
+            try:
+                rel = p.relative_to(entry_root)
+            except ValueError:
+                continue
+            if not is_excluded(str(rel), excls):
+                by_dir[p.parent].append(p)
+                seen.add(p)
 
     result = []
     for d in sorted(by_dir.keys(), key=str, reverse=True):
@@ -358,8 +429,12 @@ def generate_makefile(
     base_flags = [cfg['isa'], cfg['opt']]
     if cfg['dbg']:
         base_flags.append(cfg['dbg'])
+    # Dialect (e.g. -std=gnu11): use the project setting, fall back to -std=c99
+    if cfg['dialect_flags']:
+        base_flags.extend(cfg['dialect_flags'])
+    else:
+        base_flags.append('-std=c99')
     base_flags += [
-        '-std=c99',
         '-Wall',
         '-fmessage-length=0',
         '-fno-common',
@@ -368,10 +443,13 @@ def generate_makefile(
         '-fdata-sections',
         '-MMD', '-MP',
     ]
+    # Extra flags from "Other flags" (e.g. -include <header>)
+    if cfg['other_flags']:
+        base_flags.extend(cfg['other_flags'])
 
     all_defines = cfg['defines'] + extra_defines
 
-    sources = find_sources(project_path, cfg['exclusions'])
+    sources = find_sources(project_path, cfg['source_roots'])
     if not sources:
         raise ValueError(
             "No source files found after applying exclusions. "
