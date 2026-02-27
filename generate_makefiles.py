@@ -9,15 +9,18 @@ Usage:
     python generate_makefiles.py \
         --project   <path-to-project-root>   \
         --toolchain <path-to-tricore-gcc-bin> \
-        --output    <path-to-output-Makefile> \
         --config    Release                   \
         --extra-defines "MY_FLAG=1 ANOTHER"
+
+The Makefile is written to <project-root>/<config-name>/makefile
+(i.e. inside the build directory, alongside the response files).
 """
 
 import argparse
 import fnmatch
 import re
 import xml.etree.ElementTree as ET
+from collections import defaultdict
 from pathlib import Path
 
 
@@ -303,11 +306,16 @@ def is_excluded(rel_path: str, exclusions: list) -> bool:
 
 def find_sources(project_path: Path, exclusions: list) -> list:
     """
-    Walk the project tree and return sorted absolute Paths to all .c / .S
-    source files that are not excluded.
+    Walk the project tree and return absolute Paths to all .c / .S source
+    files that are not excluded, ordered to match AURIX Development Studio's
+    link order:
+      - Directories sorted in DESCENDING (reverse) alphabetical order by
+        their full absolute path string — this mirrors the subdir.mk include
+        order that ADS generates.
+      - Files within each directory sorted in ASCENDING alphabetical order.
     """
-    sources = []
-    for p in sorted(project_path.rglob('*')):
+    by_dir: dict[Path, list[Path]] = defaultdict(list)
+    for p in project_path.rglob('*'):
         if p.suffix.lower() not in ('.c', '.s'):
             continue
         try:
@@ -315,8 +323,12 @@ def find_sources(project_path: Path, exclusions: list) -> list:
         except ValueError:
             continue
         if not is_excluded(str(rel), exclusions):
-            sources.append(p)
-    return sources
+            by_dir[p.parent].append(p)
+
+    result = []
+    for d in sorted(by_dir.keys(), key=str, reverse=True):
+        result.extend(sorted(by_dir[d]))
+    return result
 
 
 # ── Makefile generator ─────────────────────────────────────────────────────────
@@ -324,11 +336,15 @@ def find_sources(project_path: Path, exclusions: list) -> list:
 def generate_makefile(
     project_path: Path,
     toolchain_bin: Path,
-    output_path: Path,
     cfg: dict,
     extra_defines: list,
-) -> None:
+) -> Path:
+    """Generate a Makefile inside the build directory.
+
+    Returns the absolute Path to the generated Makefile.
+    """
     build_dir  = cfg['build_dir']
+    output_path = build_dir / 'makefile'
     elf_path   = build_dir / f"{project_path.name}.elf"
     hex_path   = build_dir / f"{project_path.name}.hex"
     lsl_path   = project_path / 'Lcf_Gnuc_Tricore_Tc.lsl'
@@ -340,7 +356,16 @@ def generate_makefile(
     base_flags = [cfg['isa'], cfg['opt']]
     if cfg['dbg']:
         base_flags.append(cfg['dbg'])
-    base_flags += ['-ffunction-sections', '-fdata-sections', '-MMD', '-MP']
+    base_flags += [
+        '-std=c99',
+        '-Wall',
+        '-fmessage-length=0',
+        '-fno-common',
+        '-fstrict-volatile-bitfields',
+        '-ffunction-sections',
+        '-fdata-sections',
+        '-MMD', '-MP',
+    ]
 
     all_defines = cfg['defines'] + extra_defines
 
@@ -365,11 +390,11 @@ def generate_makefile(
     # Bash strips the double quotes and passes the argument as a single word to
     # GCC, which then opens the file.  This is the same technique ADS uses.
     build_dir.mkdir(parents=True, exist_ok=True)
-    rsp_path = build_dir / 'includes.rsp'
+    rsp_path = build_dir / 'AURIX_GCC_Compiler-Include_paths__-I_.opt'
     rsp_lines = [f'-I"{fwd(Path(i))}"' for i in cfg['includes']]
     rsp_path.write_text('\n'.join(rsp_lines), encoding='utf-8')
 
-    obj_rsp_path = build_dir / 'objects.rsp'
+    obj_rsp_path = build_dir / f'.{project_path.name}.elf.opt'
     obj_rsp_lines = [f'"{fwd(o)}"' for o in obj_map.values()]
     obj_rsp_path.write_text('\n'.join(obj_rsp_lines), encoding='utf-8')
 
@@ -384,9 +409,8 @@ def generate_makefile(
     a(f'CC      := {cc}')
     a(f'OBJCOPY := {objcopy}')
     a(f'')
-    a(f'BUILD_DIR := {mesc(build_dir)}')
-    a(f'ELF       := {mesc(elf_path)}')
-    a(f'HEX       := {mesc(hex_path)}')
+    a(f'ELF := {mesc(elf_path)}')
+    a(f'HEX := {mesc(hex_path)}')
     a(f'')
     a(f'CFLAGS   := {" ".join(base_flags)}')
 
@@ -418,7 +442,7 @@ def generate_makefile(
     a(f'\t@echo "ELF: $@"')
     a(f'')
     a(f'clean:')
-    a(f'\trm -rf $(BUILD_DIR)')
+    a(f'\trm -rf "{fwd(build_dir)}"')
     a(f'')
 
     # Per-file compile rules
@@ -443,6 +467,9 @@ def generate_makefile(
     print(f"  Sources       : {len(sources)}")
     print(f"  ELF           : {fwd(elf_path)}")
     print(f"  HEX           : {fwd(hex_path)}")
+    # Machine-parseable line for the action to capture the Makefile path
+    print(f"MAKEFILE_CI={fwd(output_path)}")
+    return output_path
 
 
 # ── Entry point ────────────────────────────────────────────────────────────────
@@ -455,8 +482,6 @@ def main():
                         help='Path to the firmware project root')
     parser.add_argument('--toolchain',     required=True,
                         help='Path to tricore-gcc11/bin')
-    parser.add_argument('--output',        required=True,
-                        help='Output Makefile path')
     parser.add_argument('--config',        default='Release',
                         help='Configuration name substring to match (default: Release)')
     parser.add_argument('--extra-defines', default='',
@@ -465,7 +490,6 @@ def main():
 
     project_path  = Path(args.project).resolve()
     toolchain_bin = Path(args.toolchain).resolve()
-    output_path   = Path(args.output).resolve()
     extra_defines = args.extra_defines.split() if args.extra_defines.strip() else []
 
     proj_name = get_project_name(project_path)
@@ -474,7 +498,7 @@ def main():
     cfg = parse_gcc_config(project_path, proj_name, args.config)
     print(f"Configuration: {cfg['name']}")
 
-    generate_makefile(project_path, toolchain_bin, output_path, cfg, extra_defines)
+    generate_makefile(project_path, toolchain_bin, cfg, extra_defines)
 
 
 if __name__ == '__main__':
