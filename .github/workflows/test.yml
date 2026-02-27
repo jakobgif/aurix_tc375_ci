@@ -25,11 +25,16 @@ jobs:
           ref: 43a77844f641368e3eabbfdac7675ca20d6d9932
           path: firmware
 
-      - name: Build firmware
+      - name: Generate Makefile
+        id: gen
         uses: ./
         with:
           project-path: firmware
-          configuration: Release
+          configuration: TriCore Release (GCC)
+
+      - name: Build firmware
+        shell: bash
+        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
 
       - name: Compare output against reference
         shell: bash
@@ -40,9 +45,9 @@ jobs:
             exit 1
           fi
           echo "Built: $HEX"
-          if ! cmp -s "$HEX" test/reference.hex; then
+          if ! cmp -s "$HEX" test/Blinky_LED_1_KIT_TC375_LK.hex; then
             echo "ERROR: output hex differs from reference"
-            diff <(xxd "$HEX" | head -20) <(xxd test/reference.hex | head -20) || true
+            diff <(xxd "$HEX" | head -20) <(xxd test/Blinky_LED_1_KIT_TC375_LK.hex | head -20) || true
             exit 1
           fi
           echo "OK: output matches reference"

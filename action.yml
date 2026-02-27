@@ -1,7 +1,9 @@
-name: Build AURIX TC375 Firmware
+name: Generate AURIX TC375 Makefile
 description: >
-  Builds an AURIX TC375 Eclipse CDT / AURIX Development Studio project using
-  the bundled TriCore GCC toolchain — no IDE installation required.
+  Parses an AURIX TC375 Eclipse CDT / AURIX Development Studio .cproject and
+  generates a GNU Makefile using the bundled TriCore GCC toolchain.
+  The Makefile path is exposed as the `makefile-path` output so you can run
+  `make` yourself (or with a generic make action) as a separate step.
 
 inputs:
   project-path:
@@ -24,11 +26,6 @@ inputs:
     required: false
     default: Release
 
-  jobs:
-    description: Number of parallel make jobs (-j).
-    required: false
-    default: '4'
-
   extra-defines:
     description: >
       Space-separated extra preprocessor definitions injected at compile time,
@@ -39,36 +36,22 @@ inputs:
     default: ''
 
 outputs:
-  elf-path:
-    description: Absolute path to the built .elf file.
-    value: ${{ steps.set-outputs.outputs.elf-path }}
-
-  hex-path:
-    description: Absolute path to the built .hex file.
-    value: ${{ steps.set-outputs.outputs.hex-path }}
+  makefile-path:
+    description: Absolute path to the generated Makefile.
+    value: ${{ steps.gen.outputs.makefile }}
 
 runs:
   using: composite
   steps:
     - name: Generate Makefile
+      id: gen
       shell: bash
       run: |
-        python "${{ github.action_path }}/generate_makefiles.py" \
+        OUTPUT=$(python "${{ github.action_path }}/generate_makefiles.py" \
           --project   "${{ inputs.project-path }}" \
           --toolchain "${{ inputs.toolchain-path }}" \
-          --output    "${{ inputs.project-path }}/Makefile.ci" \
           --config    "${{ inputs.configuration }}" \
-          --extra-defines "${{ inputs.extra-defines }}"
-
-    - name: Build
-      shell: bash
-      run: make -f "${{ inputs.project-path }}/Makefile.ci" -j${{ inputs.jobs }}
-
-    - name: Set outputs
-      id: set-outputs
-      shell: bash
-      run: |
-        ELF=$(find "${{ inputs.project-path }}" -name "*.elf" | head -1)
-        HEX=$(find "${{ inputs.project-path }}" -name "*.hex" | head -1)
-        echo "elf-path=$ELF" >> "$GITHUB_OUTPUT"
-        echo "hex-path=$HEX" >> "$GITHUB_OUTPUT"
+          --extra-defines "${{ inputs.extra-defines }}")
+        echo "$OUTPUT"
+        MAKEFILE=$(echo "$OUTPUT" | grep '^MAKEFILE_CI=' | cut -d= -f2-)
+        echo "makefile=$MAKEFILE" >> "$GITHUB_OUTPUT"
