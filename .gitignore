@@ -4,6 +4,7 @@
 
 # Temporary / working directories
 temp/
+reference/
 
 # Generated Makefiles
 Makefile.ci
