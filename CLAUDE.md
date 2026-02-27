@@ -1,14 +1,14 @@
 # AURIX TC375 CI — GitHub Action
 
 ## Purpose
-This repository provides a reusable **GitHub Action** that builds AURIX TC375 firmware projects (Eclipse CDT / AURIX Development Studio format) in CI without requiring the IDE or any separate installation.
+This repository provides a reusable **GitHub Action** that generates a GNU Makefile for AURIX TC375 firmware projects (Eclipse CDT / AURIX Development Studio format) in CI without requiring the IDE or any separate installation. The caller then runs `make` as a separate workflow step.
 
 The TriCore GCC toolchain is **included in this repository**, so the action works on any standard Windows runner (`windows-latest`) without AURIX Development Studio installed.
 
 It works by:
 1. Parsing the project's `.cproject` XML to extract all compiler settings, include paths, defines, and source file exclusions
 2. Generating a standard GNU `Makefile` via `generate_makefiles.py`
-3. Invoking `make` with the TriCore GCC toolchain
+3. Exposing the Makefile path via the `makefile-path` output — the caller runs `make` as a separate step
 
 ---
 
@@ -83,20 +83,16 @@ No Docker required. The included toolchain eliminates the need for AURIX Develop
 | `project-path`   | yes      | —                                                    | Path to the firmware repo root (contains `.cproject`) |
 | `toolchain-path` | no       | `${{ github.action_path }}/toolchain/tricore-gcc11/bin` | Path to `tricore-gcc11/bin`                        |
 | `configuration`  | no       | `Release`                                            | Substring of the GCC configuration name to match. The first configuration whose toolchain is GCC **and** whose name contains this substring (case-insensitive) is built. Works with any name, including custom ones (e.g. `"Green LED"`). |
-| `jobs`           | no       | `4`                                                  | Parallel make jobs (`-j`)                             |
 | `extra-defines`  | no       | `''`                                                 | Space-separated extra preprocessor definitions injected at compile time, e.g. `MY_FLAG=1 ANOTHER_FLAG` |
 
 ### `action.yml` outputs
 
-| Output       | Description                          |
-|--------------|--------------------------------------|
-| `elf-path`   | Absolute path to the built `.elf`    |
-| `hex-path`   | Absolute path to the built `.hex`    |
+| Output          | Description                             |
+|-----------------|-----------------------------------------|
+| `makefile-path` | Absolute path to the generated Makefile |
 
 ### Steps (inside the composite action)
-1. **Generate Makefile** — run `python generate_makefiles.py` with the inputs
-2. **Build** — run `make -f <Makefile> -j<jobs>`
-3. **Set outputs** — resolve and export the `.elf` / `.hex` paths
+1. **Generate Makefile** — run `python generate_makefiles.py` with the inputs and emit `makefile-path`
 
 ---
 
@@ -116,11 +112,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build firmware
+      - name: Generate Makefile
+        id: gen
         uses: jakobgif/aurix_tc375_ci@main
         with:
           project-path: ${{ github.workspace }}
           configuration: Release
+
+      - name: Build firmware
+        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
+        shell: bash
 
       - name: Upload HEX
         uses: actions/upload-artifact@v4
@@ -165,7 +166,7 @@ The action must be validated by a self-test workflow that:
 The repo is checked out at a pinned commit; `project-path` is pointed at the repo root (the project is at the top level, no subdirectory).
 
 ### Reference file
-A pre-built `reference.hex` is committed in `test/` in this repository, produced from the same pinned firmware commit using a known-good build. If the action produces an identical hex the test passes; any difference means the build output changed unexpectedly.
+A pre-built `Blinky_LED_1_KIT_TC375_LK.hex` is committed in `test/` in this repository, produced from the same pinned firmware commit using a known-good build. If the action produces an identical hex the test passes; any difference means the build output changed unexpectedly.
 
 ### Test workflow location
 `.github/workflows/test.yml` — triggered on every push and pull request to this repository.
@@ -188,17 +189,22 @@ jobs:
           ref: <pinned-commit-sha>
           path: firmware
 
-      - name: Build firmware
+      - name: Generate Makefile
+        id: gen
         uses: ./
         with:
           project-path: firmware
-          configuration: Release
+          configuration: TriCore Release (GCC)
+
+      - name: Build firmware
+        shell: bash
+        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
 
       - name: Compare output against reference
         shell: bash
         run: |
           HEX=$(find firmware -name "*.hex" | head -1)
-          if ! cmp -s "$HEX" test/reference.hex; then
+          if ! cmp -s "$HEX" test/Blinky_LED_1_KIT_TC375_LK.hex; then
             echo "ERROR: output hex differs from reference"
             exit 1
           fi
@@ -206,7 +212,7 @@ jobs:
 ```
 
 ### Updating the reference file
-When an intentional change to the build output is made (e.g. compiler flags changed, source updated), rebuild locally and replace `test/reference.hex` with the new output, then commit it together with the firmware pin update.
+When an intentional change to the build output is made (e.g. compiler flags changed, source updated), rebuild locally and replace `test/Blinky_LED_1_KIT_TC375_LK.hex` with the new output, then commit it together with the firmware pin update.
 
 ---
 

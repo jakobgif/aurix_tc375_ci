@@ -1,10 +1,10 @@
 # aurix_tc375_ci
 
-A reusable GitHub Action that builds AURIX TC375 firmware projects (Eclipse CDT / AURIX Development Studio format) in CI — no IDE or separate installation required.
+A reusable GitHub Action that generates a GNU Makefile for AURIX TC375 firmware projects (Eclipse CDT / AURIX Development Studio format) in CI — no IDE or separate installation required.
 
 The TriCore GCC toolchain is bundled in this repository, so the action works on any standard `windows-latest` runner out of the box.
 
-It works by parsing the project's `.cproject` XML to extract compiler settings, include paths, defines, and source file exclusions, generating a standard GNU `Makefile` via `generate_makefiles.py`, then invoking `make` with the bundled toolchain.
+It works by parsing the project's `.cproject` XML to extract compiler settings, include paths, defines, and source file exclusions, then generating a standard GNU `Makefile` via `generate_makefiles.py`. The Makefile path is exposed as the `makefile-path` output so you run `make` yourself as a separate step.
 
 ## Usage
 
@@ -22,11 +22,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build firmware
+      - name: Generate Makefile
+        id: gen
         uses: jakobgif/aurix_tc375_ci@main
         with:
           project-path: ${{ github.workspace }}
           configuration: Release
+
+      - name: Build firmware
+        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
+        shell: bash
 
       - name: Upload HEX
         uses: actions/upload-artifact@v4
@@ -41,16 +46,14 @@ jobs:
 |------------------|----------|----------------------------------------------------------|--------------------------------------------------------------------------------------------------|
 | `project-path`   | yes      | —                                                        | Path to the firmware repo root (the directory containing `.cproject`)                            |
 | `toolchain-path` | no       | `${{ github.action_path }}/toolchain/tricore-gcc11/bin`  | Path to the `tricore-gcc11/bin` directory                                                        |
-| `configuration`  | no       | `Release`                                                | Build configuration substring to match (`Debug` or `Release`)                                   |
-| `jobs`           | no       | `4`                                                      | Number of parallel make jobs (`-j`)                                                              |
+| `configuration`  | no       | `Release`                                                | Build configuration substring to match (e.g. `Release`, `Debug`, or any custom name)            |
 | `extra-defines`  | no       | `''`                                                     | Space-separated extra preprocessor definitions injected at compile time, e.g. `MY_FLAG=1 OTHER` |
 
 ## Outputs
 
-| Output     | Description                       |
-|------------|-----------------------------------|
-| `elf-path` | Absolute path to the built `.elf` |
-| `hex-path` | Absolute path to the built `.hex` |
+| Output          | Description                            |
+|-----------------|----------------------------------------|
+| `makefile-path` | Absolute path to the generated Makefile |
 
 ## Requirements
 
