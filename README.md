@@ -68,16 +68,7 @@ aurix_tc375_ci/
 ├── action.yml                   # GitHub Action definition (composite)
 ├── generate_makefiles.py        # .cproject → Makefile generator
 ├── toolchain/
-│   └── tricore-gcc11/
-│       ├── bin/                 # Compiler executables and DLLs
-│       ├── lib/                 # GCC support libraries
-│       ├── libexec/             # GCC internal tools (cc1, etc.)
-│       └── tricore-elf/
-│           ├── bin/             # Binutils (as, ld, ar, …)
-│           ├── include/         # System headers
-│           └── lib/
-│               ├── tc162/       # TC375 runtime libraries
-│               └── ldscripts/   # Linker scripts
+│   └── tricore-gcc11/           # copied from Aurix Development Studio installation
 └── test/
     └── reference.hex            # Reference build output for self-test
 ```
