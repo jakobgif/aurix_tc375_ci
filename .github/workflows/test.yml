@@ -34,7 +34,9 @@ jobs:
 
       - name: Build firmware
         shell: bash
-        run: make -f "${{ steps.gen.outputs.makefile-path }}" -j4
+        run: |
+          make -f "${{ steps.gen.outputs.makefile-path }}" clean 2>/dev/null || true
+          make -f "${{ steps.gen.outputs.makefile-path }}" -j4
 
       - name: Compare output against reference
         shell: bash
